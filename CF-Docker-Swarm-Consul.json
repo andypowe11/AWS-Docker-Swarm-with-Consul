@@ -1,0 +1,544 @@
+{ "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Docker Swarm cluster with Consul discovery backend - 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
+
+  "Mappings" : {
+    "VPCCIDRs" : {
+      "eu-central-1" : { "vpc" : "10.203.0.0/16", "pubsubnet1" : "10.203.0.0/24", "pubsubnet2" : "10.203.1.0/24", "pubsubnet3" : "10.203.2.0/24" },
+      "eu-west-1" : { "vpc" : "10.203.0.0/16", "pubsubnet1" : "10.203.0.0/24", "pubsubnet2" : "10.203.1.0/24", "pubsubnet3" : "10.203.2.0/24" },
+      "us-east-1" : { "vpc" : "10.203.0.0/16", "pubsubnet1" : "10.203.0.0/24", "pubsubnet2" : "10.203.1.0/24", "pubsubnet3" : "10.203.2.0/24" },
+      "us-west-1" : { "vpc" : "10.203.0.0/16", "pubsubnet1" : "10.203.0.0/24", "pubsubnet2" : "10.203.1.0/24", "pubsubnet3" : "10.203.2.0/24" },
+      "us-west-2" : { "vpc" : "10.203.0.0/16", "pubsubnet1" : "10.203.0.0/24", "pubsubnet2" : "10.203.1.0/24", "pubsubnet3" : "10.203.2.0/24" }
+    },
+
+    "RegionMap" : {
+      "eu-central-1" : { "AMI" : "ami-d22932be" },
+      "eu-west-1" : { "AMI" : "ami-e1398992" },
+      "us-east-1" : { "AMI" : "ami-8fcee4e5" },
+      "us-west-2" : { "AMI" : "ami-63b25203" },
+      "us-west-1" : { "AMI" : "ami-d1f482b1" }
+    }
+  },
+
+  "Parameters" : {
+    "InstanceType" : {
+      "Type" : "String",
+      "Description" : "EC2 HVM instance type (t2.micro, m3.medium, etc).",
+      "AllowedValues" : [
+        "t2.micro","t2.small","t2.medium","t2.large","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","m3.medium",
+        "m3.large","m3.xlarge","m3.2xlarge","c4.large","c4.xlarge","c4.2xlarge","c4.4xlarge","c4.8xlarge","c3.large","c3.xlarge",
+        "c3.2xlarge","c3.4xlarge","c3.8xlarge","r3.large","r3.xlarge","r3.2xlarge","r3.4xlarge","r3.8xlarge","i2.xlarge",
+        "i2.2xlarge","i2.4xlarge","i2.8xlarge" ],
+      "ConstraintDescription" : "Must be a valid EC2 HVM instance type.",
+      "Default" : "t2.micro"
+    },
+
+    "ClusterSize" : {
+      "Type" : "Number",
+      "Default" : "3",
+      "MinValue" : "3",
+      "MaxValue" : "12",
+      "Description" : "Number of nodes in the cluster (3-12)."
+    },
+
+    "AllowSSHFrom" : {
+      "Type" : "String",
+      "Description" : "The net block (CIDR) from which SSH and docker on the master are available.",
+      "Default" : "81.135.110.116/32"
+    },
+
+    "KeyName" : {
+      "Type" : "AWS::EC2::KeyPair::KeyName",
+      "Description" : "The name of an EC2 Key Pair to allow SSH access to the master.",
+      "Default" : "eduserv-dev-ap"
+    },
+
+    "VPCAvailabilityZones" : {
+      "Type" : "CommaDelimitedList",
+      "Description" : "Comma-delimited list of three VPC availability zones in which nodes are created.",
+      "Default" : "eu-west-1a,eu-west-1b,eu-west-1c"
+    }
+  },
+
+  "Resources" : {
+    "DCHPOptionsSet" : {
+      "Type" : "AWS::EC2::DHCPOptions",
+      "Properties" : {
+        "DomainName" : "docker",
+        "DomainNameServers" : [ "AmazonProvidedDNS" ]
+      }
+    },
+
+    "DHCP" : {
+      "Type" : "AWS::EC2::VPCDHCPOptionsAssociation",
+      "DependsOn" : "VPC",
+      "Properties" : {
+        "DhcpOptionsId" : { "Ref" : "DCHPOptionsSet" },
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    },
+
+    "PrivateZoneDNS" : {
+      "Type" : "AWS::Route53::HostedZone",
+      "DependsOn" : "VPC",
+      "Properties" : {
+        "Name" : "docker.",
+        "VPCs" : [
+          { "VPCId" : { "Ref" : "VPC" },
+          "VPCRegion" : { "Ref" : "AWS::Region" } }
+        ]
+      }
+    },
+
+    "VPC" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : { "Fn::FindInMap" : [ "VPCCIDRs", { "Ref" : "AWS::Region" }, "vpc" ] },
+        "EnableDnsSupport" : "true",
+        "EnableDnsHostnames" : "true",
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "VPC"] ] } }
+        ]
+      }
+    },
+
+    "PubSubnetAZ1" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : { "Fn::FindInMap" : [ "VPCCIDRs", { "Ref" : "AWS::Region" }, "pubsubnet1" ] },
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Ref" : "VPCAvailabilityZones" } ] },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Subnet1"] ] } }
+        ]
+      }
+    },
+
+    "PubSubnetAZ2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : { "Fn::FindInMap" : [ "VPCCIDRs", { "Ref" : "AWS::Region" }, "pubsubnet2" ] },
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Ref" : "VPCAvailabilityZones" } ] },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Subnet2"] ] } }
+        ]
+      }
+    },
+
+    "PubSubnetAZ3" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : { "Fn::FindInMap" : [ "VPCCIDRs", { "Ref" : "AWS::Region" }, "pubsubnet3" ] },
+        "AvailabilityZone" : { "Fn::Select" : [ "2", { "Ref" : "VPCAvailabilityZones" } ] },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Subnet3"] ] } }
+        ]
+      }
+    },
+
+    "InternetGateway" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "IGW"] ] } }
+        ]
+      }
+    },
+
+    "AttachGateway" : {
+      "Type" : "AWS::EC2::VPCGatewayAttachment",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "InternetGatewayId" : { "Ref" : "InternetGateway" }
+      }
+    },
+
+    "RouteViaIgw" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC"}
+      }
+    },
+
+    "PublicRouteViaIgw" : {
+      "Type" : "AWS::EC2::Route",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RouteViaIgw" },
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "GatewayId" : { "Ref" : "InternetGateway" }
+      }
+    },
+
+    "PubSubnet1RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PubSubnetAZ1" },
+        "RouteTableId" : { "Ref" : "RouteViaIgw" }
+      }
+    },
+
+    "PubSubnet2RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PubSubnetAZ2" },
+        "RouteTableId" : { "Ref" : "RouteViaIgw" }
+      }
+    },
+
+    "PubSubnet3RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PubSubnetAZ3" },
+        "RouteTableId" : { "Ref" : "RouteViaIgw" }
+      }
+    },
+
+    "NodeSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Node SecurityGroup",
+        "VpcId" : { "Ref" : "VPC" },
+        "SecurityGroupIngress" : [
+          { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "AllowSSHFrom" } },
+          { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0" },
+          { "IpProtocol" : "tcp", "FromPort" : "2375", "ToPort" : "2375", "CidrIp" : { "Ref" : "AllowSSHFrom" } },
+          { "IpProtocol" : "tcp", "FromPort" : "4000", "ToPort" : "4000", "CidrIp" : { "Ref" : "AllowSSHFrom" } },
+          { "IpProtocol" : "tcp", "FromPort" : "8500", "ToPort" : "8500", "CidrIp" : { "Ref" : "AllowSSHFrom" } }
+        ],
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Node-SG" ] ] } }
+        ]
+      }
+    },
+
+    "NodeIngress2375" : {
+      "DependsOn" : "NodeSecurityGroup",
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Fn::GetAtt" : [ "NodeSecurityGroup", "GroupId" ]
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "2375",
+        "ToPort" : "2375",
+        "SourceSecurityGroupId" : {
+          "Fn::GetAtt" : [ "NodeSecurityGroup", "GroupId" ]
+        }
+      }
+    },
+
+    "NodeIngress4000" : {
+      "DependsOn" : "NodeSecurityGroup",
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Fn::GetAtt" : [ "NodeSecurityGroup", "GroupId" ]
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "4000",
+        "ToPort" : "4000",
+        "SourceSecurityGroupId" : {
+          "Fn::GetAtt" : [ "NodeSecurityGroup", "GroupId" ]
+        }
+      }
+    },
+
+    "NodeIngress8500" : {
+      "DependsOn" : "NodeSecurityGroup",
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {
+          "Fn::GetAtt" : [ "NodeSecurityGroup", "GroupId" ]
+        },
+        "IpProtocol" : "tcp",
+        "FromPort" : "8500",
+        "ToPort" : "8500",
+        "SourceSecurityGroupId" : {
+          "Fn::GetAtt" : [ "NodeSecurityGroup", "GroupId" ]
+        }
+      }
+    },
+
+    "Manager0Instance" : {
+      "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Ref" : "VPCAvailabilityZones" } ] },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "InstanceType" : { "Ref" : "InstanceType"},
+        "KeyName" : { "Ref" : "KeyName"},
+        "NetworkInterfaces": [ {
+          "AssociatePublicIpAddress": "true",
+          "DeleteOnTermination" : "true",
+          "DeviceIndex": "0",
+          "SubnetId": { "Ref" : "PubSubnetAZ1" },
+          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
+        } ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : [ "", [
+            "#!/bin/bash\n\n",
+            "yum update -y\n",
+            "yum install -y docker\n",
+            "echo 'OPTIONS=\"-H tcp://0.0.0.0:2375\"' > /etc/sysconfig/docker\n",
+            "usermod -a -G docker ec2-user\n",
+            "service docker start\n",
+            "chkconfig docker on\n",
+            "docker -H tcp://manager0:2375 run -d -p 4000:4000 swarm manage -H :4000 --replication --advertise manager0:4000 consul://consul0:8500\n"
+            ] ]
+          }
+        },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Manager0" ] ] } },
+          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
+          { "Key" : "Power", "Value" : "24/7" },
+          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
+        ]
+      }
+    },
+
+    "Manager0InstanceEIP" : {
+      "Type" : "AWS::EC2::EIP",
+      "Properties" : {
+        "InstanceId" : { "Ref" : "Manager0Instance" }
+      }
+    },
+
+    "Manager0InstancePrivateDNS" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
+        "Name" : { "Fn::Join" : [ ".", [ "manager0", "docker." ] ] },
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "Manager0Instance", "PrivateIp" ] }
+        ],
+        "TTL" : "60",
+        "Type" : "A"
+      }
+    },
+
+    "Manager1Instance" : {
+      "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Ref" : "VPCAvailabilityZones" } ] },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "InstanceType" : { "Ref" : "InstanceType"},
+        "KeyName" : { "Ref" : "KeyName"},
+        "NetworkInterfaces": [ {
+          "AssociatePublicIpAddress": "true",
+          "DeleteOnTermination" : "true",
+          "DeviceIndex": "0",
+          "SubnetId": { "Ref" : "PubSubnetAZ2" },
+          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
+        } ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : [ "", [
+            "#!/bin/bash\n\n",
+            "yum update -y\n",
+            "yum install -y docker\n",
+            "echo 'OPTIONS=\"-H tcp://0.0.0.0:2375\"' > /etc/sysconfig/docker\n",
+            "usermod -a -G docker ec2-user\n",
+            "service docker start\n",
+            "chkconfig docker on\n",
+            "docker -H tcp://manager1:2375 run -d -p 4000:4000 swarm manage -H :4000 --replication --advertise manager1:4000 consul://consul0:8500\n"
+            ] ]
+          }
+        },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Manager1" ] ] } },
+          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
+          { "Key" : "Power", "Value" : "24/7" },
+          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
+        ]
+      }
+    },
+
+    "Manager1InstancePrivateDNS" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
+        "Name" : { "Fn::Join" : [ ".", [ "manager1", "docker." ] ] },
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "Manager1Instance", "PrivateIp" ] }
+        ],
+        "TTL" : "60",
+        "Type" : "A"
+      }
+    },
+
+    "Consul0Instance" : {
+      "DependsOn" : "InternetGateway",
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Ref" : "VPCAvailabilityZones" } ] },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "InstanceType" : { "Ref" : "InstanceType"},
+        "KeyName" : { "Ref" : "KeyName"},
+        "NetworkInterfaces": [ {
+          "AssociatePublicIpAddress": "true",
+          "DeleteOnTermination" : "true",
+          "DeviceIndex": "0",
+          "SubnetId": { "Ref" : "PubSubnetAZ1" },
+          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
+        } ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : [ "", [
+            "#!/bin/bash\n\n",
+            "yum update -y\n",
+            "yum install -y docker\n",
+            "echo 'OPTIONS=\"-H tcp://0.0.0.0:2375\"' > /etc/sysconfig/docker\n",
+            "usermod -a -G docker ec2-user\n",
+            "service docker start\n",
+            "chkconfig docker on\n",
+            "docker -H tcp://consul0:2375 run -d -p 8500:8500 --name=consul progrium/consul -server -bootstrap\n"
+            ] ]
+          }
+        },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Consul0" ] ] } },
+          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
+          { "Key" : "Power", "Value" : "24/7" },
+          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
+        ]
+      }
+    },
+
+    "Consul0InstancePrivateDNS" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
+        "Name" : { "Fn::Join" : [ ".", [ "consul0", "docker." ] ] },
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "Consul0Instance", "PrivateIp" ] }
+        ],
+        "TTL" : "60",
+        "Type" : "A"
+      }
+    },
+
+    "Node0Instance" : {
+      "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Ref" : "VPCAvailabilityZones" } ] },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "InstanceType" : { "Ref" : "InstanceType"},
+        "KeyName" : { "Ref" : "KeyName"},
+        "NetworkInterfaces": [ {
+          "AssociatePublicIpAddress": "true",
+          "DeleteOnTermination" : "true",
+          "DeviceIndex": "0",
+          "SubnetId": { "Ref" : "PubSubnetAZ1" },
+          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
+        } ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : [ "", [
+            "#!/bin/bash\n\n",
+            "yum update -y\n",
+            "yum install -y docker\n",
+            "echo 'OPTIONS=\"-H tcp://0.0.0.0:2375\"' > /etc/sysconfig/docker\n",
+            "usermod -a -G docker ec2-user\n",
+            "service docker start\n",
+            "chkconfig docker on\n",
+            "docker -H tcp://node0:2375 run -d swarm join --advertise=node0:2375 consul://consul0:8500\n"
+            ] ]
+          }
+        },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Node0" ] ] } },
+          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
+          { "Key" : "Power", "Value" : "24/7" },
+          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
+        ]
+      }
+    },
+
+    "Node0InstancePrivateDNS" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
+        "Name" : { "Fn::Join" : [ ".", [ "node0", "docker." ] ] },
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "Node0Instance", "PrivateIp" ] }
+        ],
+        "TTL" : "60",
+        "Type" : "A"
+      }
+    },
+
+    "Node1Instance" : {
+      "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Ref" : "VPCAvailabilityZones" } ] },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
+        "InstanceType" : { "Ref" : "InstanceType"},
+        "KeyName" : { "Ref" : "KeyName"},
+        "NetworkInterfaces": [ {
+          "AssociatePublicIpAddress": "true",
+          "DeleteOnTermination" : "true",
+          "DeviceIndex": "0",
+          "SubnetId": { "Ref" : "PubSubnetAZ2" },
+          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
+        } ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : [ "", [
+            "#!/bin/bash\n\n",
+            "yum update -y\n",
+            "yum install -y docker\n",
+            "echo 'OPTIONS=\"-H tcp://0.0.0.0:2375\"' > /etc/sysconfig/docker\n",
+            "usermod -a -G docker ec2-user\n",
+            "service docker start\n",
+            "chkconfig docker on\n",
+            "docker -H tcp://node1:2375 run -d swarm join --advertise=node1:2375 consul://consul0:8500\n"
+            ] ]
+          }
+        },
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Node1" ] ] } },
+          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
+          { "Key" : "Power", "Value" : "24/7" },
+          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
+        ]
+      }
+    },
+
+    "Node1InstancePrivateDNS" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
+        "Name" : { "Fn::Join" : [ ".", [ "node1", "docker." ] ] },
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "Node1Instance", "PrivateIp" ] }
+        ],
+        "TTL" : "60",
+        "Type" : "A"
+      }
+    }
+  },
+
+  "Outputs" : {
+    "Manager0SSH" : {
+      "Description" : "SSH command to connect to manger0",
+      "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] } ] ] }
+    },
+    "Manager1SSH" : {
+      "Description" : "SSH command to connect to manger1",
+      "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] } ] ] }
+    },
+    "Consul0SSH" : {
+      "Description" : "SSH command to connect to consul0",
+      "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Consul0Instance", "PublicIp" ] } ] ] }
+    },
+    "Manager0DockerPs" : {
+      "Description" : "Command to run a 'docker ps' on manger0",
+      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager0Instance", "PrivateIp" ] }, ":2375 ps" ] ] }
+    },
+    "Manager1DockerPs" : {
+      "Description" : "Command to run a 'docker ps' on manger1",
+      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager1Instance", "PrivateIp" ] }, ":2375 ps" ] ] }
+    }
+  }
+}
