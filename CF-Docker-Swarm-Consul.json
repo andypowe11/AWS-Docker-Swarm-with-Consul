@@ -1,6 +1,6 @@
 { "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Docker Swarm cluster with Consul discovery backend - 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
+  "Description" : "Docker Swarm cluster with Consul discovery backend - 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
 
   "Mappings" : {
     "VPCCIDRs" : {
@@ -35,22 +35,22 @@
 
     "ClusterSize" : {
       "Type" : "Number",
-      "Default" : "3",
-      "MinValue" : "3",
+      "Default" : "2",
+      "MinValue" : "2",
       "MaxValue" : "12",
-      "Description" : "Number of nodes in the cluster (3-12)."
+      "Description" : "Number of nodes in the cluster (2-12)."
     },
 
     "AllowSSHFrom" : {
       "Type" : "String",
-      "Description" : "The net block (CIDR) from which SSH and docker on the master are available.",
-      "Default" : "81.135.110.116/32"
+      "Description" : "The net block (CIDR) from which SSH and Docker on the master are available.",
+      "Default" : ""
     },
 
     "KeyName" : {
       "Type" : "AWS::EC2::KeyPair::KeyName",
       "Description" : "The name of an EC2 Key Pair to allow SSH access to the master.",
-      "Default" : "eduserv-dev-ap"
+      "Default" : ""
     },
 
     "VPCAvailabilityZones" : {
@@ -64,7 +64,7 @@
     "DCHPOptionsSet" : {
       "Type" : "AWS::EC2::DHCPOptions",
       "Properties" : {
-        "DomainName" : "docker",
+        "DomainName" : "docker-consul",
         "DomainNameServers" : [ "AmazonProvidedDNS" ]
       }
     },
@@ -82,7 +82,7 @@
       "Type" : "AWS::Route53::HostedZone",
       "DependsOn" : "VPC",
       "Properties" : {
-        "Name" : "docker.",
+        "Name" : "docker-consul.",
         "VPCs" : [
           { "VPCId" : { "Ref" : "VPC" },
           "VPCRegion" : { "Ref" : "AWS::Region" } }
@@ -309,7 +309,7 @@
       "Type" : "AWS::Route53::RecordSet",
       "Properties" : {
         "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
-        "Name" : { "Fn::Join" : [ ".", [ "manager0", "docker." ] ] },
+        "Name" : { "Fn::Join" : [ ".", [ "manager0", "docker-consul." ] ] },
         "ResourceRecords" : [
           { "Fn::GetAtt" : [ "Manager0Instance", "PrivateIp" ] }
         ],
@@ -359,7 +359,7 @@
       "Type" : "AWS::Route53::RecordSet",
       "Properties" : {
         "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
-        "Name" : { "Fn::Join" : [ ".", [ "manager1", "docker." ] ] },
+        "Name" : { "Fn::Join" : [ ".", [ "manager1", "docker-consul." ] ] },
         "ResourceRecords" : [
           { "Fn::GetAtt" : [ "Manager1Instance", "PrivateIp" ] }
         ],
@@ -409,7 +409,7 @@
       "Type" : "AWS::Route53::RecordSet",
       "Properties" : {
         "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
-        "Name" : { "Fn::Join" : [ ".", [ "consul0", "docker." ] ] },
+        "Name" : { "Fn::Join" : [ ".", [ "consul0", "docker-consul." ] ] },
         "ResourceRecords" : [
           { "Fn::GetAtt" : [ "Consul0Instance", "PrivateIp" ] }
         ],
@@ -418,21 +418,35 @@
       }
     },
 
-    "Node0Instance" : {
+    "NodeASG" : {
       "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
-      "Type" : "AWS::EC2::Instance",
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
       "Properties" : {
-        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Ref" : "VPCAvailabilityZones" } ] },
+        "AvailabilityZones" :
+          [ { "Fn::Select" : [ "0", { "Ref" : "VPCAvailabilityZones" } ] }, { "Fn::Select" : [ "1", { "Ref" : "VPCAvailabilityZones" } ] }, { "Fn::Select" : [ "2", { "Ref" : "VPCAvailabilityZones" } ] } ],
+        "VPCZoneIdentifier" : [ { "Fn::Join" : [",", [ { "Ref" : "PubSubnetAZ1" }, { "Ref" : "PubSubnetAZ2" }, { "Ref" : "PubSubnetAZ3" } ] ] } ],
+        "LaunchConfigurationName" : { "Ref" : "NodeLC" },
+        "MinSize" : "2",
+        "MaxSize" : "12",
+        "DesiredCapacity" : { "Ref" : "ClusterSize"},
+        "Tags": [
+          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Node" ] ] }, "PropagateAtLaunch" : "true" },
+          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk", "PropagateAtLaunch" : "true" },
+          { "Key" : "Power", "Value" : "24/7", "PropagateAtLaunch" : "true" },
+          { "Key" : "Billing", "Value" : "ap.eduservlab.net", "PropagateAtLaunch" : "true" }
+        ]
+      }
+    },
+
+    "NodeLC" : {
+      "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "Properties" : {
         "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
         "InstanceType" : { "Ref" : "InstanceType"},
+        "AssociatePublicIpAddress" : true,
         "KeyName" : { "Ref" : "KeyName"},
-        "NetworkInterfaces": [ {
-          "AssociatePublicIpAddress": "true",
-          "DeleteOnTermination" : "true",
-          "DeviceIndex": "0",
-          "SubnetId": { "Ref" : "PubSubnetAZ1" },
-          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
-        } ],
+        "SecurityGroups" : [ { "Ref" : "NodeSecurityGroup"} ],
         "UserData" : { "Fn::Base64" :
           { "Fn::Join" : [ "", [
             "#!/bin/bash\n\n",
@@ -442,79 +456,11 @@
             "usermod -a -G docker ec2-user\n",
             "service docker start\n",
             "chkconfig docker on\n",
-            "docker -H tcp://node0:2375 run -d swarm join --advertise=node0:2375 consul://consul0:8500\n"
+            "myip=`curl http://169.254.169.254/latest/meta-data/local-ipv4`\n",
+            "docker -H tcp://${myip}:2375 run -d swarm join --advertise=${myip}:2375 consul://consul0:8500\n"
             ] ]
           }
-        },
-        "Tags": [
-          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Node0" ] ] } },
-          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
-          { "Key" : "Power", "Value" : "24/7" },
-          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
-        ]
-      }
-    },
-
-    "Node0InstancePrivateDNS" : {
-      "Type" : "AWS::Route53::RecordSet",
-      "Properties" : {
-        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
-        "Name" : { "Fn::Join" : [ ".", [ "node0", "docker." ] ] },
-        "ResourceRecords" : [
-          { "Fn::GetAtt" : [ "Node0Instance", "PrivateIp" ] }
-        ],
-        "TTL" : "60",
-        "Type" : "A"
-      }
-    },
-
-    "Node1Instance" : {
-      "DependsOn" : [ "InternetGateway", "Consul0Instance" ],
-      "Type" : "AWS::EC2::Instance",
-      "Properties" : {
-        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Ref" : "VPCAvailabilityZones" } ] },
-        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
-        "InstanceType" : { "Ref" : "InstanceType"},
-        "KeyName" : { "Ref" : "KeyName"},
-        "NetworkInterfaces": [ {
-          "AssociatePublicIpAddress": "true",
-          "DeleteOnTermination" : "true",
-          "DeviceIndex": "0",
-          "SubnetId": { "Ref" : "PubSubnetAZ2" },
-          "GroupSet" : [ { "Ref" : "NodeSecurityGroup" } ]
-        } ],
-        "UserData" : { "Fn::Base64" :
-          { "Fn::Join" : [ "", [
-            "#!/bin/bash\n\n",
-            "yum update -y\n",
-            "yum install -y docker\n",
-            "echo 'OPTIONS=\"-H tcp://0.0.0.0:2375\"' > /etc/sysconfig/docker\n",
-            "usermod -a -G docker ec2-user\n",
-            "service docker start\n",
-            "chkconfig docker on\n",
-            "docker -H tcp://node1:2375 run -d swarm join --advertise=node1:2375 consul://consul0:8500\n"
-            ] ]
-          }
-        },
-        "Tags": [
-          { "Key" : "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName"}, "Node1" ] ] } },
-          { "Key" : "Owner", "Value" : "andy.powell@eduserv.org.uk" },
-          { "Key" : "Power", "Value" : "24/7" },
-          { "Key" : "Billing", "Value" : "ap.eduservlab.net" }
-        ]
-      }
-    },
-
-    "Node1InstancePrivateDNS" : {
-      "Type" : "AWS::Route53::RecordSet",
-      "Properties" : {
-        "HostedZoneId" : { "Ref" : "PrivateZoneDNS" },
-        "Name" : { "Fn::Join" : [ ".", [ "node1", "docker." ] ] },
-        "ResourceRecords" : [
-          { "Fn::GetAtt" : [ "Node1Instance", "PrivateIp" ] }
-        ],
-        "TTL" : "60",
-        "Type" : "A"
+        }
       }
     }
   },
