@@ -467,11 +467,11 @@
 
   "Outputs" : {
     "Manager0SSH" : {
-      "Description" : "SSH command to connect to manger0",
+      "Description" : "SSH command to connect to manager0",
       "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] } ] ] }
     },
     "Manager1SSH" : {
-      "Description" : "SSH command to connect to manger1",
+      "Description" : "SSH command to connect to manager1",
       "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] } ] ] }
     },
     "Consul0SSH" : {
@@ -479,12 +479,12 @@
       "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Consul0Instance", "PublicIp" ] } ] ] }
     },
     "Manager0DockerPs" : {
-      "Description" : "Command to run a 'docker ps' on manger0",
-      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager0Instance", "PrivateIp" ] }, ":2375 ps" ] ] }
+      "Description" : "Command to run a 'docker ps' on manager0",
+      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] }, ":2375 ps" ] ] }
     },
     "Manager1DockerPs" : {
-      "Description" : "Command to run a 'docker ps' on manger1",
-      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager1Instance", "PrivateIp" ] }, ":2375 ps" ] ] }
+      "Description" : "Command to run a 'docker ps' on manager1",
+      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] }, ":2375 ps" ] ] }
     }
   }
 }
