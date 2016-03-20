@@ -1,6 +1,6 @@
 { "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Docker Swarm cluster with Consul discovery backend - 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
+  "Description" : "Docker Swarm cluster with Consul discovery backend - 006 add --restart=always option to docker commands; 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
 
   "Mappings" : {
     "VPCCIDRs" : {
@@ -285,7 +285,7 @@
             "usermod -a -G docker ec2-user\n",
             "service docker start\n",
             "chkconfig docker on\n",
-            "docker -H tcp://manager0:2375 run -d -p 4000:4000 swarm manage -H :4000 --replication --advertise manager0:4000 consul://consul0:8500\n"
+            "docker -H tcp://manager0:2375 run -d --restart=always -p 4000:4000 swarm manage -H :4000 --replication --advertise manager0:4000 consul://consul0:8500\n"
             ] ]
           }
         },
@@ -342,7 +342,7 @@
             "usermod -a -G docker ec2-user\n",
             "service docker start\n",
             "chkconfig docker on\n",
-            "docker -H tcp://manager1:2375 run -d -p 4000:4000 swarm manage -H :4000 --replication --advertise manager1:4000 consul://consul0:8500\n"
+            "docker -H tcp://manager1:2375 run -d --restart=always -p 4000:4000 swarm manage -H :4000 --replication --advertise manager1:4000 consul://consul0:8500\n"
             ] ]
           }
         },
@@ -392,7 +392,7 @@
             "usermod -a -G docker ec2-user\n",
             "service docker start\n",
             "chkconfig docker on\n",
-            "docker -H tcp://consul0:2375 run -d -p 8500:8500 --name=consul progrium/consul -server -bootstrap\n"
+            "docker -H tcp://consul0:2375 run -d --restart=always -p 8500:8500 --name=consul progrium/consul -server -bootstrap\n"
             ] ]
           }
         },
@@ -457,7 +457,7 @@
             "service docker start\n",
             "chkconfig docker on\n",
             "myip=`curl http://169.254.169.254/latest/meta-data/local-ipv4`\n",
-            "docker -H tcp://${myip}:2375 run -d swarm join --advertise=${myip}:2375 consul://consul0:8500\n"
+            "docker -H tcp://${myip}:2375 run -d --restart=always swarm join --advertise=${myip}:2375 consul://consul0:8500\n"
             ] ]
           }
         }
