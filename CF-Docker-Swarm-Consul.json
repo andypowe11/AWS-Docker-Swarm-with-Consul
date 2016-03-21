@@ -458,12 +458,12 @@
       "Properties" : {
         "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
         "InstanceType" : { "Ref" : "NodeInstanceType"},
-        "AssociatePublicIpAddress" : true,
+        "AssociatePublicIpAddress" : "true",
         "KeyName" : { "Ref" : "KeyName"},
         "SecurityGroups" : [ { "Ref" : "NodeSecurityGroup"} ],
         "BlockDeviceMappings" : [
           {
-            "DeviceName" : "/dev/sda1",
+            "DeviceName" : "/dev/xvda",
             "Ebs" : {
               "DeleteOnTermination" : "true",
               "VolumeSize" : { "Ref" : "NodeAllocatedStorage" },
@@ -508,11 +508,11 @@
     },
     "Manager0DockerPS" : {
       "Description" : "Command to run a 'docker ps' on manager0",
-      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] }, ":2375 ps" ] ] }
+      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] }, ":4000 ps" ] ] }
     },
     "Manager1DockerPS" : {
       "Description" : "Command to run a 'docker ps' on manager1",
-      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] }, ":2375 ps" ] ] }
+      "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] }, ":4000 ps" ] ] }
     }
   }
 }

@@ -28,7 +28,7 @@ The Consul server is called 'consul0'.
 
 All instances build from a standard Amazon Linux AMI.
 
-Swarm nodes are evenly distributed across the 3 availability zones and are created
+Swarm nodes are evenly distributed across the availability zones and are created
 within an auto-scaling group which can be manually adjusted to alter
 the Swarm cluster size post-launch.
 
