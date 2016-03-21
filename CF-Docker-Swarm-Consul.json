@@ -1,6 +1,6 @@
 { "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Docker Swarm cluster with Consul discovery backend - 007 add DependsOn attribute to EIP to stop deletion failures; 006 add --restart=always option to docker commands; 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
+  "Description" : "Docker Swarm cluster with Consul discovery backend - 008 add separate node instance type; 007 remove EIP from manager0; 006 add --restart=always option to docker commands; 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
 
   "Mappings" : {
     "VPCCIDRs" : {
@@ -22,6 +22,18 @@
 
   "Parameters" : {
     "InstanceType" : {
+      "Type" : "String",
+      "Description" : "EC2 HVM instance type (t2.micro, m3.medium, etc).",
+      "AllowedValues" : [
+        "t2.micro","t2.small","t2.medium","t2.large","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","m3.medium",
+        "m3.large","m3.xlarge","m3.2xlarge","c4.large","c4.xlarge","c4.2xlarge","c4.4xlarge","c4.8xlarge","c3.large","c3.xlarge",
+        "c3.2xlarge","c3.4xlarge","c3.8xlarge","r3.large","r3.xlarge","r3.2xlarge","r3.4xlarge","r3.8xlarge","i2.xlarge",
+        "i2.2xlarge","i2.4xlarge","i2.8xlarge" ],
+      "ConstraintDescription" : "Must be a valid EC2 HVM instance type.",
+      "Default" : "t2.micro"
+    },
+
+    "NodeInstanceType" : {
       "Type" : "String",
       "Description" : "EC2 HVM instance type (t2.micro, m3.medium, etc).",
       "AllowedValues" : [
@@ -298,14 +310,6 @@
       }
     },
 
-    "Manager0InstanceEIP" : {
-      "DependsOn" : "InternetGateway",
-      "Type" : "AWS::EC2::EIP",
-      "Properties" : {
-        "InstanceId" : { "Ref" : "Manager0Instance" }
-      }
-    },
-
     "Manager0InstancePrivateDNS" : {
       "DependsOn" : "InternetGateway",
       "Type" : "AWS::Route53::RecordSet",
@@ -447,7 +451,7 @@
       "Type" : "AWS::AutoScaling::LaunchConfiguration",
       "Properties" : {
         "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ] },
-        "InstanceType" : { "Ref" : "InstanceType"},
+        "InstanceType" : { "Ref" : "NodeInstanceType"},
         "AssociatePublicIpAddress" : true,
         "KeyName" : { "Ref" : "KeyName"},
         "SecurityGroups" : [ { "Ref" : "NodeSecurityGroup"} ],
@@ -474,6 +478,10 @@
       "Description" : "SSH command to connect to manager0",
       "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] } ] ] }
     },
+    "Manager0PublicIP" : {
+      "Description" : "Public IP address of manager0",
+      "Value" : { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] }
+    },
     "Manager1SSH" : {
       "Description" : "SSH command to connect to manager1",
       "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] } ] ] }
@@ -482,11 +490,11 @@
       "Description" : "SSH command to connect to consul0",
       "Value" : { "Fn::Join" : [ "", [ "ssh -i ~/.ssh/eduserv-dev-ap.pem ec2-user@", { "Fn::GetAtt" : [ "Consul0Instance", "PublicIp" ] } ] ] }
     },
-    "Manager0DockerPs" : {
+    "Manager0DockerPS" : {
       "Description" : "Command to run a 'docker ps' on manager0",
       "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager0Instance", "PublicIp" ] }, ":2375 ps" ] ] }
     },
-    "Manager1DockerPs" : {
+    "Manager1DockerPS" : {
       "Description" : "Command to run a 'docker ps' on manager1",
       "Value" : { "Fn::Join" : [ "", [ "docker -H tcp://", { "Fn::GetAtt" : [ "Manager1Instance", "PublicIp" ] }, ":2375 ps" ] ] }
     }

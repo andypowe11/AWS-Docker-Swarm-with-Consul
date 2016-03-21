@@ -8,21 +8,24 @@ The CloudFormation template takes the following parameters:
 
 | Parameter | Description |
 |-----------|-------------|
-| InstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the Swarm managers, Consul server and Swarm nodes. |
+| InstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the Swarm managers and Consul server. |
+| NodeInstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the Swarm nodes. |
 | ClusterSize | Number of nodes in the Swarm cluster (2-12). |
 | AllowSSHFrom | The net block (CIDR) from which you can use SSH and docker to communicate with the Swarm master. |
 | KeyName | The name of an EC2 Key Pair to allow SSH access to the Swarm master. |
 | VPCAvailabilityZones | Comma-delimited list of three VPC availability zones in which to create subnets. |
 
-The template builds a new VPC with 3 subnets (in 3 availability zones),
+The template builds a new VPC (typically with 3 subnets in 3 availability zones),
 a resillient pair of Swarm managers, a Consul directory service and a cluster of between
-2 and 12 Swarm nodes,
-more or less as described at https://github.com/docker/swarm/blob/master/docs/install-manual.md.
+2 and 12 Swarm nodes.
+This is more or less as described at https://github.com/docker/swarm/blob/master/docs/install-manual.md.
 
 The two Swarm managers are called 'manager0' and 'manager1'.
+These can be configured for active-passive failover using Route53.
+
 The Consul server is called 'consul0'.
 
-All instances use the standard Amazon Linux AMI.
+All instances build from a standard Amazon Linux AMI.
 
 Swarm nodes are evenly distributed across the 3 availability zones and are created
 within an auto-scaling group which can be manually adjusted to alter
@@ -39,8 +42,9 @@ A single 'node' security group controls access between all the instances.
 | Output | Description |
 |--------|-------------|
 | Manager0SSH | SSH command to connect to manager0 |
+| Manager0PublicIP | Public IP address of manager0 |
 | Manager1SSH | SSH command to connect to manager1 |
-| Consul0SSH | SSH command to connect to consul0 |
+| Manager1PublicIP | Public IP address of manager1 |
 | Manager0DockerPs | Command to run a 'docker ps' on manager0 |
 | Manager1DockerPs | Command to run a 'docker ps' on manager1 |
 
