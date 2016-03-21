@@ -1,6 +1,6 @@
 { "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Docker Swarm cluster with Consul discovery backend - 008 add separate node instance type; 007 remove EIP from manager0; 006 add --restart=always option to docker commands; 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
+  "Description" : "Docker Swarm cluster with Consul discovery backend - 009 add node storage size parameter; 008 add separate node instance type; 007 remove EIP from manager0; 006 add --restart=always option to docker commands; 005 replace nodes with ASG; 004: add node0 and node1; 003: add consul0; 002: add manager1; 001: initial deployment of manager0",
 
   "Mappings" : {
     "VPCCIDRs" : {
@@ -43,6 +43,12 @@
         "i2.2xlarge","i2.4xlarge","i2.8xlarge" ],
       "ConstraintDescription" : "Must be a valid EC2 HVM instance type.",
       "Default" : "t2.micro"
+    },
+
+    "NodeAllocatedStorage" : {
+      "Type" : "String",
+      "Description" : "Storage in GB allocated to each node",
+      "Default" : "50"
     },
 
     "ClusterSize" : {
@@ -455,6 +461,16 @@
         "AssociatePublicIpAddress" : true,
         "KeyName" : { "Ref" : "KeyName"},
         "SecurityGroups" : [ { "Ref" : "NodeSecurityGroup"} ],
+        "BlockDeviceMappings" : [
+          {
+            "DeviceName" : "/dev/sda1",
+            "Ebs" : {
+              "DeleteOnTermination" : "true",
+              "VolumeSize" : { "Ref" : "NodeAllocatedStorage" },
+              "VolumeType" : "gp2"
+            }
+          }
+        ],
         "UserData" : { "Fn::Base64" :
           { "Fn::Join" : [ "", [
             "#!/bin/bash\n\n",
