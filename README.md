@@ -1,4 +1,4 @@
-# AWS Docker Swarm with Consul backend
+# AWS Docker Swarm with Consul directory
 A CloudFormation template to build an Amazon Linux-based Docker Swarm on AWS, using
 Consul as the backend directory service
 
@@ -8,12 +8,11 @@ The CloudFormation template takes the following parameters:
 
 | Parameter | Description |
 |-----------|-------------|
-| InstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the
-Swarm managers, Consul server and Swarm nodes. |
+| InstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the Swarm managers, Consul server and Swarm nodes. |
 | ClusterSize | Number of nodes in the Swarm cluster (2-12). |
 | AllowSSHFrom | The net block (CIDR) from which you can use SSH and docker to communicate with the Swarm master. |
 | KeyName | The name of an EC2 Key Pair to allow SSH access to the Swarm master. |
-| VpcAvailabilityZones | Comma-delimited list of three VPC availability zones in which to create subnets. |
+| VPCAvailabilityZones | Comma-delimited list of three VPC availability zones in which to create subnets. |
 
 The template builds a new VPC with 3 subnets (in 3 availability zones),
 a resillient pair of Swarm managers, a Consul directory service and a cluster of between
@@ -21,7 +20,7 @@ a resillient pair of Swarm managers, a Consul directory service and a cluster of
 more or less as described at https://github.com/docker/swarm/blob/master/docs/install-manual.md.
 
 The two Swarm managers are called 'manager0' and 'manager1'.
-The Consul is called 'consul0'.
+The Consul server is called 'consul0'.
 
 All instances use the standard Amazon Linux AMI.
 
