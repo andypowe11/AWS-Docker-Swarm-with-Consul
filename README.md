@@ -10,6 +10,7 @@ The CloudFormation template takes the following parameters:
 |-----------|-------------|
 | InstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the Swarm managers and Consul server. |
 | NodeInstanceType | EC2 HVM instance type (t2.micro, m3.medium, etc.) for the Swarm nodes. |
+| NodeAllocatedStorage | Storage in GB allocated to each node. |
 | ClusterSize | Number of nodes in the Swarm cluster (2-12). |
 | AllowSSHFrom | The net block (CIDR) from which you can use SSH and docker to communicate with the Swarm master. |
 | KeyName | The name of an EC2 Key Pair to allow SSH access to the Swarm master. |
